@@ -501,11 +501,11 @@ async function checkWeather(){
   res.innerHTML=`<div class="loading pulse">${isFuture?'Buscando previsão...':'Consultando condições meteorológicas...'}</div>`;
 
   try{
-    let wind,gust,temp,rain,cloud,vis,humid,weatherCode,kpVal=null;
+    let wind,gust,temp,rain,cloud,vis,humid,weatherCode,windDir,uvIndex,kpVal=null;
 
     if(isFuture){
       // Previsão: busca horária, pega hora do meio-dia (12h) do dia selecionado
-      const url=`https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lon}&hourly=temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,wind_gusts_10m,cloud_cover,visibility,weather_code&wind_speed_unit=ms&timezone=auto&forecast_days=16`;
+      const url=`https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lon}&hourly=temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,wind_gusts_10m,wind_direction_10m,uv_index,cloud_cover,visibility,weather_code&wind_speed_unit=ms&timezone=auto&forecast_days=16`;
       const r=await fetch(url);
       const d=await r.json();
       // Preferir 12h, senão hora mais próxima do meio-dia disponível
@@ -521,22 +521,25 @@ async function checkWeather(){
       vis=d.hourly.visibility[i];
       humid=d.hourly.relative_humidity_2m[i];
       weatherCode=d.hourly.weather_code[i];
+      windDir=d.hourly.wind_direction_10m[i];
+      uvIndex=d.hourly.uv_index[i];
     } else {
       // Hoje: tempo real
-      const url=`https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lon}&current=temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,wind_gusts_10m,cloud_cover,visibility,weather_code&wind_speed_unit=ms&timezone=auto`;
+      const url=`https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lon}&current=temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,wind_gusts_10m,wind_direction_10m,uv_index,cloud_cover,visibility,weather_code&wind_speed_unit=ms&timezone=auto`;
       const [r,kp]=await Promise.all([fetch(url),fetchKp()]);
       const d=await r.json();
       const c=d.current;
       wind=c.wind_speed_10m; gust=c.wind_gusts_10m; temp=c.temperature_2m;
       rain=c.precipitation; cloud=c.cloud_cover; vis=c.visibility;
       humid=c.relative_humidity_2m; weatherCode=c.weather_code; kpVal=kp;
+      windDir=c.wind_direction_10m; uvIndex=c.uv_index;
     }
 
     const issues=[];
     const warns=[];
-    if(wind>drone.maxWind) issues.push('Vento acima do limite ('+wind.toFixed(1)+' m/s > '+drone.maxWind+' m/s)');
+    if(wind>drone.maxWind) issues.push('Vento acima do limite ('+(wind*3.6).toFixed(1)+' km/h > '+(drone.maxWind*3.6).toFixed(1)+' km/h)');
     else if(wind>drone.maxWind*0.8) warns.push('Vento próximo ao limite');
-    if(gust>drone.maxWind*1.1) issues.push('Rajadas muito fortes ('+gust.toFixed(1)+' m/s)');
+    if(gust>drone.maxWind*1.1) issues.push('Rajadas muito fortes ('+(gust*3.6).toFixed(1)+' km/h)');
     else if(gust>drone.maxWind) warns.push('Rajadas acima do limite de vento sustentado');
     if(temp<drone.minTemp) issues.push('Temperatura baixa demais ('+temp+'°C)');
     if(temp>drone.maxTemp) issues.push('Temperatura alta demais ('+temp+'°C)');
@@ -580,6 +583,10 @@ async function checkWeather(){
       if(code<=49)return'Névoa';if(code<=59)return'Garoa';if(code<=69)return'Chuva';
       if(code<=79)return'Neve';if(code<=82)return'Chuva forte';return'Tempestade';
     }
+    function compass(deg){
+      const dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+      return dirs[Math.round(deg/22.5)%16];
+    }
 
     res.innerHTML=`
 <div class="result-card">
@@ -596,12 +603,12 @@ async function checkWeather(){
   <div class="metrics">
     <div class="metric">
       <div class="metric-label">Vento</div>
-      <div class="metric-value" style="color:${windColor}">${wind.toFixed(1)}<span class="metric-unit">m/s</span></div>
+      <div class="metric-value" style="color:${windColor}">${(wind*3.6).toFixed(1)}<span class="metric-unit">km/h</span></div>
       <div class="metric-bar"><div class="metric-fill" style="width:${windPct.toFixed(0)}%;background:${windColor}"></div></div>
     </div>
     <div class="metric">
       <div class="metric-label">Rajadas</div>
-      <div class="metric-value" style="color:${gust>drone.maxWind?'#ff4444':gust>drone.maxWind*.9?'#ffaa00':'#00e676'}">${gust.toFixed(1)}<span class="metric-unit">m/s</span></div>
+      <div class="metric-value" style="color:${gust>drone.maxWind?'#ff4444':gust>drone.maxWind*.9?'#ffaa00':'#00e676'}">${(gust*3.6).toFixed(1)}<span class="metric-unit">km/h</span></div>
       <div class="metric-bar"><div class="metric-fill" style="width:${Math.min(100,gust/drone.maxWind*100).toFixed(0)}%;background:${gust>drone.maxWind?'#ff4444':'#ffaa00'}"></div></div>
     </div>
     <div class="metric">
@@ -619,13 +626,15 @@ async function checkWeather(){
     <div class="factor-title">Fatores adicionais</div>
     <div class="factor-row"><span class="factor-name">Condição geral</span><span class="factor-val">${wCode(weatherCode)}</span></div>
     <div class="factor-row"><span class="factor-name">Visibilidade</span><span class="factor-val" style="color:${visColor}">${vis>=1000?(vis/1000).toFixed(1)+' km':vis+' m'}</span></div>
+    <div class="factor-row"><span class="factor-name">Direção do vento</span><span class="factor-val">${compass(windDir)} ${Math.round(windDir)}°</span></div>
     <div class="factor-row"><span class="factor-name">Cobertura nuvens</span><span class="factor-val">${cloud}%</span></div>
     <div class="factor-row"><span class="factor-name">Umidade</span><span class="factor-val">${humid}%</span></div>
+    <div class="factor-row"><span class="factor-name">Nível UV</span><span class="factor-val">${uvIndex.toFixed(1)}</span></div>
     ${!isFuture?`<div class="factor-row">
       <span class="factor-name">Índice Kp (GPS)</span>
       <span class="factor-val" style="color:${kp.color}">${kp.label} &nbsp;<span style="font-size:10px;color:var(--muted)">${kp.text}</span></span>
     </div>`:''}
-    <div class="factor-row"><span class="factor-name">Limite de vento</span><span class="factor-val">${drone.maxWind} m/s</span></div>
+    <div class="factor-row"><span class="factor-name">Limite de vento</span><span class="factor-val">${(drone.maxWind*3.6).toFixed(1)} km/h</span></div>
     <div class="factor-row"><span class="factor-name">Faixa de temp.</span><span class="factor-val">${drone.minTemp}°C ~ ${drone.maxTemp}°C</span></div>
   </div>
   <div class="advice">${advice}</div>
