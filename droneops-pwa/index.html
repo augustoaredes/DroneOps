@@ -539,8 +539,8 @@ async function checkWeather(){
     const warns=[];
     if(wind>drone.maxWind) issues.push('Vento acima do limite ('+(wind*3.6).toFixed(1)+' km/h > '+(drone.maxWind*3.6).toFixed(1)+' km/h)');
     else if(wind>drone.maxWind*0.8) warns.push('Vento próximo ao limite');
-    if(gust>drone.maxWind*1.1) issues.push('Rajadas muito fortes ('+(gust*3.6).toFixed(1)+' km/h)');
-    else if(gust>drone.maxWind) warns.push('Rajadas acima do limite de vento sustentado');
+    if(gust>drone.maxWind*0.8) issues.push('Rajadas muito fortes ('+(gust*3.6).toFixed(1)+' km/h) — próximas do limite de resistência do '+drone.name);
+    else if(gust>drone.maxWind*0.5) warns.push('Rajadas podem comprometer a estabilidade, especialmente em drones leves');
     if(temp<drone.minTemp) issues.push('Temperatura baixa demais ('+temp+'°C)');
     if(temp>drone.maxTemp) issues.push('Temperatura alta demais ('+temp+'°C)');
     if(rain>drone.maxRain && drone.maxRain===0) issues.push('Precipitação detectada ('+rain.toFixed(1)+' mm/h) — drone sem proteção IP');
@@ -637,7 +637,7 @@ async function checkWeather(){
     <div class="factor-row"><span class="factor-name">Limite de vento</span><span class="factor-val">${(drone.maxWind*3.6).toFixed(1)} km/h</span></div>
     <div class="factor-row"><span class="factor-name">Faixa de temp.</span><span class="factor-val">${drone.minTemp}°C ~ ${drone.maxTemp}°C</span></div>
   </div>
-  <div class="advice">${advice}</div>
+  <div class="advice">${advice}<div style="opacity:.65;font-size:11px;margin-top:8px">Previsão de um modelo regional — rajadas locais (prédios, árvores, relevo) podem ser maiores que o previsto. Confirme as condições reais antes e durante o voo.</div></div>
 </div>`;
   }catch(e){
     res.innerHTML='<div class="error-msg">Erro ao consultar dados meteorológicos. Tente novamente.</div>';
